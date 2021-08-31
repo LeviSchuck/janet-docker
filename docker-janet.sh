@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DOCKER_REPO=leafgarland
+DOCKER_REPO=levischuck
 
 LAST_COMMIT=$(<last_commit.txt)
 CURRENT_COMMIT=$(curl -L -s -H 'Accept: application/json' https://api.github.com/repos/janet-lang/janet/branches/master | jq -j .commit.sha)
@@ -13,22 +13,30 @@ function docker-build () {
     COMMIT=$2
     echo "Building with TAGNAME=$TAGNAME and COMMIT=$COMMIT"
 
-    docker build . --target=core --tag $DOCKER_REPO/janet:$TAGNAME \
+    docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 . \
+        --target=dev \
+        --tag $DOCKER_REPO/janet-sdk:$TAGNAME \
         --build-arg "COMMIT=$COMMIT" \
         --label "org.opencontainers.image.revision=$COMMIT" \
         --label "org.opencontainers.image.created=$DATE" \
-        --label "org.opencontainers.image.source=https://github.com/janet-lang/janet"
-    docker build . --target=dev --tag $DOCKER_REPO/janet-sdk:$TAGNAME \
+        --label "org.opencontainers.image.source=https://github.com/janet-lang/janet" \
+        --push
+    docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 . \
+        --target=core \
+        --tag $DOCKER_REPO/janet:$TAGNAME \
         --build-arg "COMMIT=$COMMIT" \
         --label "org.opencontainers.image.revision=$COMMIT" \
         --label "org.opencontainers.image.created=$DATE" \
-        --label "org.opencontainers.image.source=https://github.com/janet-lang/janet"
+        --label "org.opencontainers.image.source=https://github.com/janet-lang/janet" \
+        --push
 }
 
 if [ "$LAST_COMMIT" == "$CURRENT_COMMIT" ]; then
     echo "No new commits since $CURRENT_COMMIT"
     exit 0
 fi
+
+echo "$DOCKER_PASSWORD" | docker login -u $DOCKER_REPO --password-stdin
 
 echo "Building image for latest commit $CURRENT_COMMIT, last commit was $LAST_COMMIT"
 docker-build latest $CURRENT_COMMIT
@@ -51,12 +59,10 @@ else
     fi
 fi
 
-echo $DOCKER_PASSWORD | docker login -u leafgarland --password-stdin
-docker push $DOCKER_REPO/janet
-docker push $DOCKER_REPO/janet-sdk
 
-echo $CURRENT_COMMIT > last_commit.txt
-echo $CURRENT_TAG > last_tag.txt
+
+echo "$CURRENT_COMMIT" > last_commit.txt
+echo "$CURRENT_TAG" > last_tag.txt
 
 if ! git diff --no-ext-diff --quiet --exit-code; then
     MSG=$(curl -L -s -H 'Accept: application/json' "https://api.github.com/repos/janet-lang/janet/commits/$CURRENT_COMMIT" | jq -j .commit.message)
