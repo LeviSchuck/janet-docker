@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -e
 DOCKER_REPO=levischuck
 
 LAST_COMMIT=$(<last_commit.txt)
